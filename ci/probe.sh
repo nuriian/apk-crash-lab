@@ -6,7 +6,7 @@ PKG="$2"
 BASE="${3:-}"
 LAUNCH="$PKG/.ui.starter.StarterActivity"
 
-say() { echo "[probe] $*"; }
+say() { echo "[probe] $(date +%H:%M:%S) $*"; }
 
 say "waiting for boot..."
 adb wait-for-device
@@ -19,10 +19,10 @@ say "boot_completed=$(adb shell getprop sys.boot_completed | tr -d '\r')  api=$(
 
 launch_and_check() {
   local tag="$1"
-  say "[$tag] resolve: $(adb shell cmd package resolve-activity --brief "$PKG" 2>/dev/null | tail -n1 | tr -d '\r')"
-  adb logcat -b all -c 2>/dev/null || true
-  say "[$tag] am start -W $LAUNCH"
-  adb shell am start -W -n "$LAUNCH" 2>&1 | sed 's/^/    /'
+  say "[$tag] resolve: $(timeout 15 adb shell cmd package resolve-activity --brief "$PKG" 2>/dev/null | tail -n1 | tr -d '\r')"
+  timeout 10 adb logcat -b all -c 2>/dev/null || true
+  say "[$tag] am start (tanpa -W, dibatasi30dtk)"
+  timeout 30 adb shell am start -n "$LAUNCH" 2>&1 | sed 's/^/    /' || echo "    (am start timeout/err)"
   local alive=0
   for i in $(seq 1 10); do
     if adb shell pidof "$PKG" >/dev/null 2>&1; then alive=1; break; fi
@@ -49,7 +49,7 @@ if [ -n "$BASE" ]; then
   say "install baseline $BASE"
   adb install -r -d "$BASE" > binstall.out 2>&1 || true; tail -n1 binstall.out
   launch_and_check baseline
-  adb logcat -d -b crash > baseline_crash.log 2>/dev/null || true
+  timeout 60 adb logcat -d -b crash > baseline_crash.log 2>/dev/null || true
   if grep -q "FATAL EXCEPTION" baseline_crash.log; then
     say "BASELINE FATAL EXCEPTION:"; grep -A 40 "FATAL EXCEPTION" baseline_crash.log | head -n 60
   else
@@ -75,9 +75,9 @@ fi
 grep -q Success install.out || { say "INSTALL GAGAL"; exit 2; }
 
 launch_and_check test
-adb logcat -d -b crash > crash.log 2>/dev/null || true
-adb logcat -d -b all >> crash.log 2>/dev/null || true
-adb shell dumpsys activity activities 2>/dev/null | grep -m2 -E 'mResumedActivity|topResumedActivity' >> crash.log || true
+timeout 60 adb logcat -d -b crash > crash.log 2>/dev/null || true
+timeout 90 adb logcat -d -b all >> crash.log 2>/dev/null || true
+timeout 20 adb shell dumpsys activity activities 2>/dev/null | grep -m2 -E 'mResumedActivity|topResumedActivity' >> crash.log || true
 
 echo "================ CRASH BUFFER ================"
 if grep -q "FATAL EXCEPTION" crash.log; then
