@@ -38,8 +38,19 @@ if [ -n "$BASE" ]; then
 fi
 
 # ---- APK tes ----
+say "sisa paket sebelum install: $(adb shell pm list packages 2>/dev/null | grep -c "$PKG" || true)"
+adb uninstall "$PKG" >/dev/null 2>&1 || true
+sleep 2
 say "install test $APK"
-adb install -r -d "$APK" 2>&1 | tail -n 1 | tee install.out
+adb install -r -d -t "$APK" > install.out 2>&1 || true
+cat install.out
+if ! grep -q Success install.out; then
+  say "retry bersih: uninstall + install ulang"
+  adb uninstall "$PKG" >/dev/null 2>&1 || true
+  sleep 2
+  adb install -r -d -t "$APK" > install.out 2>&1 || true
+  cat install.out
+fi
 if ! grep -q Success install.out; then
   say "INSTALL GAGAL"
   exit 2
