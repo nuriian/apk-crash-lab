@@ -1,0 +1,50 @@
+name: apk-probe
+on:
+  workflow_dispatch:
+    inputs:
+      apk_path:
+        description: "Path APK di repo yang akan dites (cth: apk/test.apk)"
+        required: true
+        default: "apk/test.apk"
+      pkg:
+        description: "Package name"
+        required: true
+        default: "app.source.getcontact"
+      baseline_path:
+        description: "Baseline APK (original) untuk kontrol A/B — kosongkan untuk skip"
+        required: false
+        default: ""
+
+jobs:
+  boot-and-crash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash ci/probe.sh "${{ inputs.apk_path }}" "${{ inputs.pkg }}" "${{ inputs.baseline_path }}"
+
+      - name: Upload crash log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-log
+          path: |
+            baseline_crash.log
+            crash.log
+          if-no-files-found: ignore
