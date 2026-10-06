@@ -1,10 +1,10 @@
 #!/bin/bash
-# Probe: install baseline (opsional) + APK tes -> launch -> dump crash logcat.
-# Dipanggil oleh reactivecircus/android-emulator-runner (adb sudah PATH).
+# Probe v2: baseline (opsional) + install tes -> am start -W eksplisit -> poll pid -> dump logcat penuh.
 set -u
 APK="$1"
 PKG="$2"
 BASE="${3:-}"
+LAUNCH="$PKG/.ui.starter.StarterActivity"
 
 say() { echo "[probe] $*"; }
 
@@ -16,24 +16,46 @@ for i in $(seq 1 60); do
   sleep 5
 done
 say "boot_completed=$(adb shell getprop sys.boot_completed | tr -d '\r')  api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')"
-adb logcat -c || true
 
-# ---- baseline (APK original) ----
+launch_and_check() {
+  local tag="$1"
+  say "[$tag] resolve: $(adb shell cmd package resolve-activity --brief "$PKG" 2>/dev/null | tail -n1 | tr -d '\r')"
+  adb logcat -b all -c 2>/dev/null || true
+  say "[$tag] am start -W $LAUNCH"
+  adb shell am start -W -n "$LAUNCH" 2>&1 | sed 's/^/    /'
+  local alive=0
+  for i in $(seq 1 10); do
+    if adb shell pidof "$PKG" >/dev/null 2>&1; then alive=1; break; fi
+    sleep 3
+  done
+  if [ "$alive" = "1" ]; then
+    sleep 15
+    local p2; p2=$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\r')
+    if [ -n "$p2" ]; then
+      say "[$tag] PROSES HIDUP stabil pid=$p2"
+      echo ALIVE > ".state_$tag"
+    else
+      say "[$tag] proses mati dalam15 detik"
+      echo DIED > ".state_$tag"
+    fi
+  else
+    say "[$tag] PROSES TIDAK PERNAH HIDUP"
+    echo NOTSTARTED > ".state_$tag"
+  fi
+}
+
+# ---- baseline ----
 if [ -n "$BASE" ]; then
   say "install baseline $BASE"
-  adb install -r -d "$BASE" 2>&1 | tail -n 1
-  say "launch baseline (monkey)"
-  monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-  sleep 25
-  adb logcat -d -b crash -b main -t 3000 > baseline_crash.log 2>&1 || true
+  adb install -r -d "$BASE" > binstall.out 2>&1 || true; tail -n1 binstall.out
+  launch_and_check baseline
+  adb logcat -d -b crash > baseline_crash.log 2>/dev/null || true
   if grep -q "FATAL EXCEPTION" baseline_crash.log; then
-    say "BASELINE JUGA CRASH:"
-    grep -A 40 "FATAL EXCEPTION" baseline_crash.log | head -n 60
+    say "BASELINE FATAL EXCEPTION:"; grep -A 40 "FATAL EXCEPTION" baseline_crash.log | head -n 60
   else
-    say "baseline boot NORMAL"
+    say "baseline: tanpa FATAL EXCEPTION (state=$(cat .state_baseline 2>/dev/null || echo ?))"
   fi
   adb uninstall "$PKG" >/dev/null 2>&1 || true
-  adb logcat -c || true
   sleep 3
 fi
 
@@ -46,35 +68,32 @@ adb install -r -d -t "$APK" > install.out 2>&1 || true
 cat install.out
 if ! grep -q Success install.out; then
   say "retry bersih: uninstall + install ulang"
-  adb uninstall "$PKG" >/dev/null 2>&1 || true
-  sleep 2
+  adb uninstall "$PKG" >/dev/null 2>&1 || true; sleep 2
   adb install -r -d -t "$APK" > install.out 2>&1 || true
-  cat install.out
+cat install.out
 fi
-if ! grep -q Success install.out; then
-  say "INSTALL GAGAL"
-  exit 2
-fi
-say "launch test (monkey)"
-monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-sleep 30
+grep -q Success install.out || { say "INSTALL GAGAL"; exit 2; }
 
-adb logcat -d -b crash > crash.log 2>&1 || true
-adb logcat -d -b all -t 6000 >> crash.log 2>&1 || true
+launch_and_check test
+adb logcat -d -b crash > crash.log 2>/dev/null || true
+adb logcat -d -b all >> crash.log 2>/dev/null || true
+adb shell dumpsys activity activities 2>/dev/null | grep -m2 -E 'mResumedActivity|topResumedActivity' >> crash.log || true
 
 echo "================ CRASH BUFFER ================"
 if grep -q "FATAL EXCEPTION" crash.log; then
   grep -A 60 "FATAL EXCEPTION" crash.log | head -n 90
   echo "================ KESIMPULAN: ADA FATAL EXCEPTION ================"
 else
-  echo "tidak ada FATAL EXCEPTION di buffer crash. sinyal lain:"
-  grep -E "has died|SIGSEGV|SIGABRT|SIGKILL|tombstone|ANR in|Process .* died" crash.log | head -n 20 || echo "(tidak ada sinyal kematian)"
-  if adb shell pidof "$PKG" >/dev/null 2>&1; then
-    echo "STATUS: app MASIH BERJALAN (boot normal di CI)"
+  echo "tidak ada FATAL EXCEPTION. sinyal lain:"
+  grep -E "has died.*getcontact|Fatal signal|SIGSEGV|SIGABRT|tombstone|ANR in app.source" crash.log | head -n 20 || echo "(tidak ada)"
+  st=$(cat ".state_test" 2>/dev/null || echo ?)
+  if [ "$st" = "ALIVE" ]; then
+    echo "STATUS: app HIDUP dan stabil — BOOT NORMAL (crash device = butuh .so arm64 / kondisi device asli)"
+  elif [ "$st" = "DIED" ]; then
+    echo "STATUS: proses start lalu MATI dalam15dtk tanpa FATAL EXCEPTION (native/exit)"
   else
-    echo "STATUS: app mati tanpa FATAL EXCEPTION (kemungkinan native kill/exit)"
+    echo "STATUS: proses TIDAK PERNAH START (lihat output am start di atas)"
   fi
   echo "================ KESIMPULAN: TANPA FATAL EXCEPTION ================"
 fi
-
 exit 0
