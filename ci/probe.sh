@@ -79,6 +79,21 @@ timeout 60 adb logcat -d -b crash > crash.log 2>/dev/null || true
 timeout 90 adb logcat -d -b all >> crash.log 2>/dev/null || true
 timeout 20 adb shell dumpsys activity activities 2>/dev/null | grep -m2 -E 'mResumedActivity|topResumedActivity' >> crash.log || true
 
+# ---- file marker (checkpoint instrumentasi app) ----
+say "[test] isi folder files app:"
+timeout 15 adb shell ls -la "/sdcard/Android/data/$PKG/files/" 2>&1 | sed 's/^/    /' || true
+say "[test] isi /sdcard root gc_*:"
+timeout 15 adb shell ls -la /sdcard/gc_*.txt 2>&1 | sed 's/^/    /' || true
+mkdir -p marker-files
+for f in "/sdcard/Android/data/$PKG/files/gc_mark.txt" "/sdcard/Android/data/$PKG/files/gc_crash.txt" "/sdcard/gc_crash.txt"; do
+  if timeout 15 adb shell "test -f '$f' && echo yes" 2>/dev/null | grep -q yes; then
+    timeout 20 adb pull "$f" marker-files/ >/dev/null 2>&1 && say "MARKER DITEMUKAN: $f"
+    echo "---- isi $f ----"
+    timeout 15 adb shell "cat '$f' 2>/dev/null" | head -n 40
+  fi
+done
+ls -la marker-files/ 2>/dev/null || true
+
 echo "================ CRASH BUFFER ================"
 if grep -q "FATAL EXCEPTION" crash.log; then
   grep -A 60 "FATAL EXCEPTION" crash.log | head -n 90
