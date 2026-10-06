@@ -10,6 +10,14 @@ on:
         description: "Package name"
         required: true
         default: "app.source.getcontact"
+      release_tag:
+        description: "Tag release (kosongkan kalau pakai apk_path)"
+        required: false
+        default: ""
+      asset_name:
+        description: "Nama asset di release"
+        required: false
+        default: ""
       baseline_path:
         description: "Baseline APK (original) untuk kontrol A/B — kosongkan untuk skip"
         required: false
@@ -21,6 +29,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - name: Unduh APK dari release (kalau release_tag diisi)
+        if: inputs.release_tag != ''
+        run: |
+          curl -sL -o test-full.apk "https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}/${{ inputs.asset_name }}"
+          ls -la test-full.apk
 
       - name: Enable KVM
         run: |
@@ -37,7 +51,7 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
-          script: bash ci/probe.sh "${{ inputs.apk_path }}" "${{ inputs.pkg }}" "${{ inputs.baseline_path }}"
+          script: bash ci/probe.sh "${{ inputs.apk_path != '' && inputs.apk_path || 'test-full.apk' }}" "${{ inputs.pkg }}" "${{ inputs.baseline_path }}"
 
       - name: Upload crash log
         if: always()
