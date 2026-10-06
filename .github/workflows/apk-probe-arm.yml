@@ -1,0 +1,53 @@
+name: apk-probe-arm
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag release berisi APK (repo public = unduh tanpa auth)"
+        required: true
+        default: "full-v2"
+      asset_name:
+        description: "Nama asset di release"
+        required: true
+        default: "test-full.apk"
+      pkg:
+        description: "Package name"
+        required: true
+        default: "app.source.getcontact"
+
+jobs:
+  arm64-probe:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cek KVM
+        run: |
+          ls -l /dev/kvm || { echo "TIDAK ADA /dev/kvm di runner arm"; exit 1; }
+
+      - name: Unduh APK full (release asset)
+        run: |
+          curl -sL -o test-full.apk "https://github.com/${{ github.repository }}/releases/download/${{ inputs.release_tag }}/${{ inputs.asset_name }}"
+          ls -la test-full.apk
+          unzip -l test-full.apk | grep -c '\.so' || true
+
+      - name: Run on emulator arm64
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: arm64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash ci/probe.sh "test-full.apk" "${{ inputs.pkg }}" ""
+
+      - name: Upload crash log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-log-arm
+          path: |
+            baseline_crash.log
+            crash.log
+          if-no-files-found: ignore
