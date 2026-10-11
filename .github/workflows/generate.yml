@@ -1,0 +1,219 @@
+name: Generate Video (MoneyPrinterTurbo)
+
+# Cara pakai: buka tab Actions -> pilih workflow ini -> Run workflow ->
+# isi subject -> Run. Hasil mp4 ada di Artifacts saat job selesai.
+on:
+  workflow_dispatch:
+    inputs:
+      video_subject:
+        description: "Topik/judul video (wajib diisi; jika video_script diisi, ini hanya jadi label)"
+        required: true
+        type: string
+      video_script:
+        description: "Script narasi JADI (opsional; jika diisi, LLM tidak dipakai sama sekali — minta ke Hermes)"
+        required: false
+        default: ""
+        type: string
+      video_terms:
+        description: "Search terms footage, dipisah koma (WAJIB jika video_script diisi; minta ke Hermes)"
+        required: false
+        default: ""
+        type: string
+      llm_api_key:
+        description: "API key LLM per-run (opsional; mengalahkan secret. Tidak perlu jika pakai video_script+video_terms)"
+        required: false
+        default: ""
+        type: string
+      pexels_api_key:
+        description: "API key Pexels per-run (opsional; mengalahkan secret)"
+        required: false
+        default: ""
+        type: string
+      pixabay_api_key:
+        description: "API key Pixabay per-run (opsional; mengalahkan secret)"
+        required: false
+        default: ""
+        type: string
+      video_language:
+        description: "Bahasa script & voiceover"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, id-ID, en-US]
+      llm_provider:
+        description: "Provider LLM untuk script (butuh secret LLM_API_KEY)"
+        required: false
+        default: "gemini"
+        type: choice
+        options:
+          - gemini
+          - groq
+          - pollinations
+          - openai
+          - deepseek
+          - openrouter
+          - moonshot
+          - minimax
+          - mimo
+          - qwen
+          - volcengine
+          - anthropic
+      llm_model:
+        description: "Model LLM (kosongkan = default upstream provider)"
+        required: false
+        default: ""
+        type: string
+      llm_base_url:
+        description: "Base URL custom (kosongkan = default upstream; untuk gateway OpenAI-compatible isi di sini + provider openai)"
+        required: false
+        default: ""
+        type: string
+      video_source:
+        description: "Sumber footage"
+        required: false
+        default: "pexels"
+        type: choice
+        options: [pexels, pixabay]
+      video_aspect:
+        description: "Rasio video"
+        required: false
+        default: "9:16"
+        type: choice
+        options: ["9:16", "16:9", "1:1"]
+      paragraph_number:
+        description: "Jumlah paragraf script (1-10, makin banyak makin lama)"
+        required: false
+        default: "1"
+        type: choice
+        options: ["1", "2", "3", "4", "5"]
+      video_count:
+        description: "Jumlah video output"
+        required: false
+        default: "1"
+        type: choice
+        options: ["1", "2", "3"]
+      voice_name:
+        description: "Voice Edge TTS (gratis, tanpa key)"
+        required: false
+        default: "id-ID-GadisNeural"
+        type: string
+      bgm_type:
+        description: "Background music"
+        required: false
+        default: "random"
+        type: choice
+        options: [random, none]
+      stop_at:
+        description: "Berhenti di tahap ini (debug; 'video' = jadi full)"
+        required: false
+        default: "video"
+        type: choice
+        options: [video, script, terms, audio, subtitle, materials]
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VIDEO_SUBJECT: ${{ inputs.video_subject }}
+      VIDEO_SCRIPT: ${{ inputs.video_script }}
+      VIDEO_TERMS: ${{ inputs.video_terms }}
+      VIDEO_LANGUAGE: ${{ inputs.video_language }}
+      LLM_PROVIDER: ${{ inputs.llm_provider }}
+      LLM_MODEL: ${{ inputs.llm_model }}
+      LLM_BASE_URL: ${{ inputs.llm_base_url }}
+      VIDEO_SOURCE: ${{ inputs.video_source }}
+      VIDEO_ASPECT: ${{ inputs.video_aspect }}
+      PARAGRAPH_NUMBER: ${{ inputs.paragraph_number }}
+      VIDEO_COUNT: ${{ inputs.video_count }}
+      VOICE_NAME: ${{ inputs.voice_name }}
+      BGM_TYPE: ${{ inputs.bgm_type }}
+      STOP_AT: ${{ inputs.stop_at }}
+
+    steps:
+      - name: Checkout template repo
+        uses: actions/checkout@v4
+
+      - name: Checkout MoneyPrinterTurbo upstream
+        uses: actions/checkout@v4
+        with:
+          repository: harry0703/MoneyPrinterTurbo
+          ref: main
+          path: upstream
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: uv sync --frozen
+
+      - name: Generate config.toml (input per-run mengalahkan secret)
+        env:
+          LLM_API_KEY_INPUT: ${{ inputs.llm_api_key }}
+          PEXELS_API_KEY_INPUT: ${{ inputs.pexels_api_key }}
+          PIXABAY_API_KEY_INPUT: ${{ inputs.pixabay_api_key }}
+          LLM_API_KEY_SECRET: ${{ secrets.LLM_API_KEY }}
+          PEXELS_API_KEY_SECRET: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY_SECRET: ${{ secrets.PIXABAY_API_KEY }}
+        run: |
+          LLM_KEY="${LLM_API_KEY_INPUT:-$LLM_API_KEY_SECRET}"
+          PEXELS_KEY="${PEXELS_API_KEY_INPUT:-$PEXELS_API_KEY_SECRET}"
+          PIXABAY_KEY="${PIXABAY_API_KEY_INPUT:-$PIXABAY_API_KEY_SECRET}"
+          python3 scripts/make_config.py \
+            --example upstream/config.example.toml \
+            --output upstream/config.toml \
+            --llm-provider "$LLM_PROVIDER" \
+            --llm-api-key "$LLM_KEY" \
+            --llm-model "$LLM_MODEL" \
+            --llm-base-url "$LLM_BASE_URL" \
+            --pexels-key "$PEXELS_KEY" \
+            --pixabay-key "$PIXABAY_KEY"
+
+      - name: Generate video
+        working-directory: upstream
+        run: |
+          ARGS=(--video-subject "$VIDEO_SUBJECT")
+          # Mode Hermes-script: LLM tidak dipanggil sama sekali,
+          # script + search terms sudah jadi dari input.
+          if [ -n "$VIDEO_SCRIPT" ]; then
+            if [ -z "$VIDEO_TERMS" ]; then
+              echo "::error::video_terms wajib diisi saat video_script diisi (kalau tidak, upstream diam-diam memanggil LLM lalu gagal)."
+              exit 2
+            fi
+            ARGS+=(--video-script "$VIDEO_SCRIPT" --video-terms "$VIDEO_TERMS")
+          else
+            ARGS+=(--paragraph-number "$PARAGRAPH_NUMBER")
+          fi
+          if [ "$VIDEO_LANGUAGE" != "auto" ]; then
+            ARGS+=(--video-language "$VIDEO_LANGUAGE")
+          fi
+          ARGS+=(
+            --video-source "$VIDEO_SOURCE"
+            --video-aspect "$VIDEO_ASPECT"
+            --video-count "$VIDEO_COUNT"
+            --voice-name "$VOICE_NAME"
+            --bgm-type "$BGM_TYPE"
+            --stop-at "$STOP_AT"
+          )
+          uv run python cli.py "${ARGS[@]}" > "$GITHUB_WORKSPACE/result.json" 2> "$GITHUB_WORKSPACE/run.log"
+
+      - name: Collect results
+        run: |
+          python3 scripts/collect_results.py --result result.json --output output
+          cp result.json run.log output/ 2>/dev/null || true
+
+      - name: Upload videos
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_number }}
+          path: output/
+          retention-days: 7
