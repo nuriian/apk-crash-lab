@@ -80,12 +80,12 @@ on:
       voice_name:
         description: "Voice Edge TTS (gratis, tanpa key)"
         required: false
-        default: "id-ID-GadisNeural"
+        default: "id-ID-ArdiNeural"
         type: string
       voice_rate:
-        description: "Kecepatan bicara (1.0 normal, 0.9 lebih pelan/natural)"
+        description: "Kecepatan bicara (0.9 natural, 1.0 normal)"
         required: false
-        default: "1.0"
+        default: "0.9"
         type: string
       bgm_type:
         description: "Background music"
