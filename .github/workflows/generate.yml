@@ -143,6 +143,11 @@ on:
         required: false
         default: ""
         type: string
+      stroke_width:
+        description: "Tebal outline subtitle (1.5 standar, 2.0 lebih tegas)"
+        required: false
+        default: "2.0"
+        type: string
 
 jobs:
   generate:
@@ -172,6 +177,7 @@ jobs:
       VIDEO_TRANSITION_MODE: ${{ inputs.video_transition_mode }}
       META_AUTHOR: ${{ inputs.meta_author }}
       BATCH_JSON: ${{ inputs.batch_json }}
+      STROKE_WIDTH: ${{ inputs.stroke_width }}
 
     steps:
       - name: Checkout template repo
@@ -259,6 +265,7 @@ jobs:
             --subtitle-animation "$SUBTITLE_ANIMATION"
             --video-clip-duration "$VIDEO_CLIP_DURATION"
             --video-transition-mode "$VIDEO_TRANSITION_MODE"
+            --stroke-width "$STROKE_WIDTH"
           )
           # boolean OptionalAction: hanya kirim flag saat true
           if [ "$MATCH_MATERIALS" = "true" ]; then
