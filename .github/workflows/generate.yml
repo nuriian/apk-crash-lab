@@ -109,6 +109,45 @@ on:
         default: "video"
         type: choice
         options: [video, script, terms, audio, subtitle, materials]
+      video_concat_mode:
+        description: "Urutan klip (preset monetisasi: sequential ikut cerita)"
+        required: false
+        default: "sequential"
+        type: choice
+        options: [sequential, random]
+      match_materials:
+        description: "Klip ikut urutan search terms (preset monetisasi: on)"
+        required: false
+        default: true
+        type: boolean
+      subtitle_display_mode:
+        description: "Subtitle karaoke per kata (preset monetisasi: word_by_word)"
+        required: false
+        default: "word_by_word"
+        type: choice
+        options: [word_by_word, sentence]
+      subtitle_animation:
+        description: "Animasi subtitle (preset monetisasi: pop_spring)"
+        required: false
+        default: "pop_spring"
+        type: choice
+        options: [pop_spring, none]
+      video_clip_duration:
+        description: "Durasi tiap klip detik (preset: 3, makin pendek makin banyak cut)"
+        required: false
+        default: "3"
+        type: string
+      video_transition_mode:
+        description: "Transisi antar klip (preset: fade-in)"
+        required: false
+        default: "fade-in"
+        type: choice
+        options: [fade-in, fade-out, shuffle, slide-in, slide-out, zoom-in, zoom-out, none]
+      meta_author:
+        description: "Nama page untuk tag metadata mp4 (opsional, boleh kosong)"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   generate:
@@ -129,6 +168,13 @@ jobs:
       VOICE_NAME: ${{ inputs.voice_name }}
       BGM_TYPE: ${{ inputs.bgm_type }}
       STOP_AT: ${{ inputs.stop_at }}
+      VIDEO_CONCAT_MODE: ${{ inputs.video_concat_mode }}
+      MATCH_MATERIALS: ${{ inputs.match_materials }}
+      SUBTITLE_DISPLAY_MODE: ${{ inputs.subtitle_display_mode }}
+      SUBTITLE_ANIMATION: ${{ inputs.subtitle_animation }}
+      VIDEO_CLIP_DURATION: ${{ inputs.video_clip_duration }}
+      VIDEO_TRANSITION_MODE: ${{ inputs.video_transition_mode }}
+      META_AUTHOR: ${{ inputs.meta_author }}
 
     steps:
       - name: Checkout template repo
@@ -203,13 +249,43 @@ jobs:
             --voice-name "$VOICE_NAME"
             --bgm-type "$BGM_TYPE"
             --stop-at "$STOP_AT"
+            --video-concat-mode "$VIDEO_CONCAT_MODE"
+            --subtitle-display-mode "$SUBTITLE_DISPLAY_MODE"
+            --subtitle-animation "$SUBTITLE_ANIMATION"
+            --video-clip-duration "$VIDEO_CLIP_DURATION"
+            --video-transition-mode "$VIDEO_TRANSITION_MODE"
           )
+          # boolean OptionalAction: hanya kirim flag saat true
+          if [ "$MATCH_MATERIALS" = "true" ]; then
+            ARGS+=(--match-materials-to-script)
+          fi
           uv run python cli.py "${ARGS[@]}" > "$GITHUB_WORKSPACE/result.json" 2> "$GITHUB_WORKSPACE/run.log"
 
       - name: Collect results
         run: |
           python3 scripts/collect_results.py --result result.json --output output
           cp result.json run.log output/ 2>/dev/null || true
+
+      - name: Strip metadata + tag author (post-step monetisasi)
+        run: |
+          if ls output/video-*.mp4 >/dev/null 2>&1; then
+            for f in output/video-*.mp4; do
+              tmp="$f.tagged.mp4"
+              if [ -n "$META_AUTHOR" ]; then
+                ffmpeg -y -v error -i "$f" -map_metadata -1 -c copy \
+                  -metadata title="$VIDEO_SUBJECT" -metadata artist="$META_AUTHOR" \
+                  -metadata comment="original production by $META_AUTHOR" "$tmp"
+              else
+                ffmpeg -y -v error -i "$f" -map_metadata -1 -c copy "$tmp"
+              fi
+              mv "$tmp" "$f"
+              echo "--- $f ---"
+              ffprobe -v error -show_entries format=duration,size \
+                -of default=noprint_wrappers=1 "$f"
+            done
+          else
+            echo "no mp4 yet (stop_at=$STOP_AT), skipping metadata step"
+          fi
 
       - name: Upload videos
         uses: actions/upload-artifact@v4
