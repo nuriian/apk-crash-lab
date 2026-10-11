@@ -69,6 +69,7 @@ def main(argv=None) -> int:
         "videos": copied,
         "script": result.get("script"),
         "terms": result.get("terms"),
+        "materials": result.get("materials"),
         "audio_file": result.get("audio_file"),
         "subtitle_path": result.get("subtitle_path"),
     }
