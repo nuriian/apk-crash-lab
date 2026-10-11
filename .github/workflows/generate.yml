@@ -19,21 +19,6 @@ on:
         required: false
         default: ""
         type: string
-      llm_api_key:
-        description: "API key LLM per-run (opsional; mengalahkan secret. Tidak perlu jika pakai video_script+video_terms)"
-        required: false
-        default: ""
-        type: string
-      pexels_api_key:
-        description: "API key Pexels per-run (opsional; mengalahkan secret)"
-        required: false
-        default: ""
-        type: string
-      pixabay_api_key:
-        description: "API key Pixabay per-run (opsional; mengalahkan secret)"
-        required: false
-        default: ""
-        type: string
       video_language:
         description: "Bahasa script & voiceover"
         required: false
@@ -214,18 +199,15 @@ jobs:
         working-directory: upstream
         run: uv sync --frozen
 
-      - name: Generate config.toml (input per-run mengalahkan secret)
+      - name: Generate config.toml dari secrets
         env:
-          LLM_API_KEY_INPUT: ${{ inputs.llm_api_key }}
-          PEXELS_API_KEY_INPUT: ${{ inputs.pexels_api_key }}
-          PIXABAY_API_KEY_INPUT: ${{ inputs.pixabay_api_key }}
           LLM_API_KEY_SECRET: ${{ secrets.LLM_API_KEY }}
           PEXELS_API_KEY_SECRET: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY_SECRET: ${{ secrets.PIXABAY_API_KEY }}
         run: |
-          LLM_KEY="${LLM_API_KEY_INPUT:-$LLM_API_KEY_SECRET}"
-          PEXELS_KEY="${PEXELS_API_KEY_INPUT:-$PEXELS_API_KEY_SECRET}"
-          PIXABAY_KEY="${PIXABAY_API_KEY_INPUT:-$PIXABAY_API_KEY_SECRET}"
+          LLM_KEY="$LLM_API_KEY_SECRET"
+          PEXELS_KEY="$PEXELS_API_KEY_SECRET"
+          PIXABAY_KEY="$PIXABAY_API_KEY_SECRET"
           python3 scripts/make_config.py \
             --example upstream/config.example.toml \
             --output upstream/config.toml \
