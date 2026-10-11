@@ -97,6 +97,11 @@ on:
         required: false
         default: "id-ID-GadisNeural"
         type: string
+      voice_rate:
+        description: "Kecepatan bicara (1.0 normal, 0.9 lebih pelan/natural)"
+        required: false
+        default: "1.0"
+        type: string
       bgm_type:
         description: "Background music"
         required: false
@@ -148,6 +153,11 @@ on:
         required: false
         default: ""
         type: string
+      batch_json:
+        description: "Batch multi-task JSON array (opsional; untuk test A/B voice dsb — mengalahkan input single)"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   generate:
@@ -166,6 +176,7 @@ jobs:
       PARAGRAPH_NUMBER: ${{ inputs.paragraph_number }}
       VIDEO_COUNT: ${{ inputs.video_count }}
       VOICE_NAME: ${{ inputs.voice_name }}
+      VOICE_RATE: ${{ inputs.voice_rate }}
       BGM_TYPE: ${{ inputs.bgm_type }}
       STOP_AT: ${{ inputs.stop_at }}
       VIDEO_CONCAT_MODE: ${{ inputs.video_concat_mode }}
@@ -175,6 +186,7 @@ jobs:
       VIDEO_CLIP_DURATION: ${{ inputs.video_clip_duration }}
       VIDEO_TRANSITION_MODE: ${{ inputs.video_transition_mode }}
       META_AUTHOR: ${{ inputs.meta_author }}
+      BATCH_JSON: ${{ inputs.batch_json }}
 
     steps:
       - name: Checkout template repo
@@ -227,6 +239,16 @@ jobs:
       - name: Generate video
         working-directory: upstream
         run: |
+          # Mode batch: BATCH_JSON berisi JSON array VideoParams (max 100).
+          # Contoh A/B voice: [{"video_subject":"...","video_script":"...","video_terms":"...",
+          #   "video_source":"pexels","voice_name":"id-ID-GadisNeural","voice_rate":0.9},
+          #   {...,"voice_name":"id-ID-ArdiNeural","voice_rate":0.9}]
+          if [ -n "$BATCH_JSON" ]; then
+            echo "$BATCH_JSON" > "$GITHUB_WORKSPACE/batch.json"
+            uv run python cli.py --batch-file "$GITHUB_WORKSPACE/batch.json" \
+              --stop-at "$STOP_AT" > "$GITHUB_WORKSPACE/result.json" 2> "$GITHUB_WORKSPACE/run.log"
+            exit $?
+          fi
           ARGS=(--video-subject "$VIDEO_SUBJECT")
           # Mode Hermes-script: LLM tidak dipanggil sama sekali,
           # script + search terms sudah jadi dari input.
@@ -247,6 +269,7 @@ jobs:
             --video-aspect "$VIDEO_ASPECT"
             --video-count "$VIDEO_COUNT"
             --voice-name "$VOICE_NAME"
+            --voice-rate "$VOICE_RATE"
             --bgm-type "$BGM_TYPE"
             --stop-at "$STOP_AT"
             --video-concat-mode "$VIDEO_CONCAT_MODE"
