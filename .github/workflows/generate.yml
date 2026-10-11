@@ -128,11 +128,11 @@ on:
         default: "3"
         type: string
       video_transition_mode:
-        description: "Transisi antar klip (preset: fade-in)"
+        description: "Transisi antar klip (none disarankan: fade upstream 1 dtk penuh per klip)"
         required: false
-        default: "fade-in"
+        default: "none"
         type: choice
-        options: [fade-in, fade-out, shuffle, slide-in, slide-out, zoom-in, zoom-out, none]
+        options: [none, fade-in, fade-out, shuffle, slide-in, slide-out, zoom-in, zoom-out]
       meta_author:
         description: "Nama page untuk tag metadata mp4 (opsional, boleh kosong)"
         required: false
