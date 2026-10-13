@@ -206,21 +206,42 @@ jobs:
         run: uv sync --frozen
 
       # Sementara: Edge TTS upstream 403 global sejak ~10 Okt 2026
-      # (speech.platform.bing.com menolak handshake). Fork nuriian/edge-tts
-      # pindah endpoint ke api.msedgeservices.com (dipakai Edge 155).
-      # Hapus step ini kalau upstream sudah fix.
-      - name: Override edge-tts dengan fork (sementara)
+      # (speech.platform.bing.com menolak handshake). Fix = endpoint
+      # api.msedgeservices.com (dipakai Edge 155, terbukti jalan 13 Okt).
+      # Patch langsung file terinstall (deterministik; install dari git
+      # kena cache build usang). Hapus step ini kalau upstream sudah fix.
+      - name: Patch endpoint edge-tts (sementara)
         working-directory: upstream
         run: |
-          # uv cache git by commit; same version 7.2.8 can serve stale build —
-          # clear cache then verify the endpoint actually changed.
-          uv cache clean edge-tts 2>/dev/null || uv cache prune --ci
-          uv pip install --force-reinstall --no-deps --refresh "edge-tts @ git+https://github.com/nuriian/edge-tts.git@master"
+          EP_FILE=$(uv run python -c "import edge_tts.constants as c; print(c.__file__)")
+          echo "patching: $EP_FILE"
+          python3 - "$EP_FILE" <<'EOF'
+          import sys
+          path = sys.argv[1]
+          old_host = "speech.platform.bing.com/consumer/speech/synthesize/readaloud"
+          new_host = "api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+          text = open(path).read()
+          if "msedgeservices" in text:
+              print("already patched")
+          elif old_host not in text:
+              print("::error::unexpected constants.py layout, aborting"); sys.exit(1)
+          else:
+              text = text.replace(
+                  'WSS_URL = f"wss://{BASE_URL}/edge/v1?TrustedClientToken={TRUSTED_CLIENT_TOKEN}"',
+                  'WSS_URL = (\n'
+                  '    "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"\n'
+                  '    f"?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}"\n'
+                  ')',
+              )
+              assert "msedgeservices" in text, "patch did not apply"
+              open(path, "w").write(text)
+              print("patched OK")
+          EOF
           EP=$(uv run python -c "from edge_tts import constants; print(constants.WSS_URL.split('?')[0])")
           echo "edge-tts endpoint: $EP"
           case "$EP" in
-            *msedgeservices*) echo "fork active OK" ;;
-            *) echo "::error::fork NOT active, still: $EP"; exit 1 ;;
+            *msedgeservices*) echo "patch active OK" ;;
+            *) echo "::error::patch NOT active, still: $EP"; exit 1 ;;
           esac
 
       - name: Generate config.toml dari secrets
