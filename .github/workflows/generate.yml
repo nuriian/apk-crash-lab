@@ -212,8 +212,16 @@ jobs:
       - name: Override edge-tts dengan fork (sementara)
         working-directory: upstream
         run: |
-          uv pip install --force-reinstall --no-deps "edge-tts @ git+https://github.com/nuriian/edge-tts.git@master"
-          uv run python -c "from edge_tts import constants; print('edge-tts endpoint:', constants.WSS_URL.split('?')[0])"
+          # uv cache git by commit; same version 7.2.8 can serve stale build —
+          # clear cache then verify the endpoint actually changed.
+          uv cache clean edge-tts 2>/dev/null || uv cache prune --ci
+          uv pip install --force-reinstall --no-deps --refresh "edge-tts @ git+https://github.com/nuriian/edge-tts.git@master"
+          EP=$(uv run python -c "from edge_tts import constants; print(constants.WSS_URL.split('?')[0])")
+          echo "edge-tts endpoint: $EP"
+          case "$EP" in
+            *msedgeservices*) echo "fork active OK" ;;
+            *) echo "::error::fork NOT active, still: $EP"; exit 1 ;;
+          esac
 
       - name: Generate config.toml dari secrets
         env:
