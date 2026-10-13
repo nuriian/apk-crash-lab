@@ -212,7 +212,7 @@ jobs:
       - name: Override edge-tts dengan fork (sementara)
         working-directory: upstream
         run: |
-          uv pip install --force-reinstall --no-deps "edge-tts @ git+https://github.com/nuriian/edge-tts.git@main"
+          uv pip install --force-reinstall --no-deps "edge-tts @ git+https://github.com/nuriian/edge-tts.git@master"
           uv run python -c "from edge_tts import constants; print('edge-tts endpoint:', constants.WSS_URL.split('?')[0])"
 
       - name: Generate config.toml dari secrets
